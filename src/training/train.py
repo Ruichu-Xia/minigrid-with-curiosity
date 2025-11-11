@@ -10,29 +10,6 @@ import matplotlib.pyplot as plt
 from models.ppo_lstm import PPOLSTMAgent
 
 
-# class ExperimentTracker:
-#     def __init__(self, project_name: str, experiment_name: str, config: Dict):
-#         wandb.init(
-#             project=project_name,
-#             name=experiment_name,
-#             config=config,
-#             # mode="offline"  # Uncomment to keep data local
-#         )
-#         self.best_mean_reward = -float('inf')
-    
-#     def log_metrics(self, iteration: int, metrics: Dict[str, float]):
-#         wandb.log(metrics, step=iteration)
-    
-#     def is_best_model(self, mean_reward: float) -> bool:
-#         if mean_reward > self.best_mean_reward:
-#             self.best_mean_reward = mean_reward
-#             return True
-#         return False
-    
-#     def close(self):
-#         wandb.finish()
-
-
 class ExperimentTracker:
     """Dead simple tracker - just collects data and plots at the end."""
     
@@ -184,54 +161,6 @@ class ExperimentTracker:
         plt.close()
         
         print(f"📊 Main plot saved to: {simple_plot_path}")
-
-
-def evaluate_agent(agent: 'PPOLSTMAgent', env, num_episodes: int = 10) -> Dict[str, float]:
-    """
-    Evaluate agent performance.
-    
-    Args:
-        agent: The PPO LSTM agent
-        env: Gym environment
-        num_episodes: Number of episodes to evaluate
-    
-    Returns:
-        Dictionary with evaluation statistics
-    """
-    agent.actor_critic.eval()
-    
-    episode_rewards = []
-    episode_lengths = []
-    
-    for _ in range(num_episodes):
-        obs, _ = env.reset()
-        hidden_state = agent.actor_critic.init_hidden(1, agent.device)
-        
-        episode_reward = 0
-        episode_length = 0
-        done = False
-        
-        while not done:
-            action, _, _, new_hidden = agent.select_action(
-                obs, hidden_state, deterministic=True
-            )
-            obs, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated
-            
-            episode_reward += reward
-            episode_length += 1
-            hidden_state = new_hidden
-        
-        episode_rewards.append(episode_reward)
-        episode_lengths.append(episode_length)
-    
-    return {
-        'eval/mean_reward': np.mean(episode_rewards),
-        'eval/std_reward': np.std(episode_rewards),
-        'eval/min_reward': np.min(episode_rewards),
-        'eval/max_reward': np.max(episode_rewards),
-        'eval/mean_length': np.mean(episode_lengths),
-    }
 
 
 def train_ppo_lstm(
