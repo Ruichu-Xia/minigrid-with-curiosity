@@ -830,42 +830,63 @@ class RIDEAgent(PPOLSTMAgent):
         
         # Compute L2 distance between state representations
         # Both should be detached to prevent gradient flow
+        # r_intrinsic = ||φ(s_{t+1}) - φ(s_t)||_2
         diff = state_rep - prev_state_rep
-        intrinsic_reward = torch.norm(diff, p=2).item()
+        control_reward = torch.norm(diff, p=2).item()
         
         # Apply episodic state visitation normalization (matching original RIDE)
+        # CRITICAL: Normalize by visit count of CURRENT state (s_t), not next state (s_{t+1})
+        # In original RIDE: intrinsic_rewards = count_rewards * control_rewards
+        # where count_rewards = 1/sqrt(N(s_t)) and control_rewards = ||φ(s_{t+1}) - φ(s_t)||_2
         if self.use_intrinsic_normalization:
-            # Create a hashable representation of the state for visitation tracking
-            # Use quantization to group similar states together
-            # Round to 2 decimal places for better state grouping (more precise than 1 decimal)
-            if state_rep.is_cuda:
-                # If on GPU, move to CPU only for hashing
+            # Create a hashable representation of the PREVIOUS state (s_t) for visitation tracking
+            # This is the state we're transitioning FROM, which determines the normalization factor
+            if prev_state_rep.is_cuda:
+                prev_state_rep_cpu = prev_state_rep.cpu()
+            else:
+                prev_state_rep_cpu = prev_state_rep
+            
+            # Round to 1 decimal place for state grouping (matching original implementation)
+            # This groups nearby states together so visitation counts grow as intended
+            prev_state_rep_rounded = torch.round(prev_state_rep_cpu * 10).int().view(-1).numpy()
+            # Use hash of the array data for efficient lookup
+            prev_state_key = hash(prev_state_rep_rounded.tobytes())
+            
+            # Get visit count for the CURRENT state (s_t) BEFORE incrementing
+            # This matches original RIDE: count_rewards = 1/sqrt(N(s_t))
+            if prev_state_key not in self.episode_state_visits:
+                self.episode_state_visits[prev_state_key] = 0
+            
+            # Get the count BEFORE incrementing (for this transition)
+            visit_count = self.episode_state_visits[prev_state_key]
+            
+            # Increment visitation count for the CURRENT state (s_t) after using it
+            # This ensures next time we visit s_t, the count will be higher
+            self.episode_state_visits[prev_state_key] += 1
+            
+            # Also track the next state (s_{t+1}) for future transitions
+            # But don't use it for normalization of THIS reward
+            # CRITICAL BUG FIX: Use prev_state_rep (s_t) for normalization, not state_rep (s_{t+1})
+            # In original RIDE: count_rewards = 1/sqrt(N(s_t)) where s_t is the CURRENT state
+            if prev_state_rep.is_cuda:
                 state_rep_cpu = state_rep.cpu()
             else:
                 state_rep_cpu = state_rep
+            state_rep_rounded = torch.round(state_rep_cpu * 10).int().view(-1).numpy()
+            next_state_key = hash(state_rep_rounded.tobytes())
+            if next_state_key not in self.episode_state_visits:
+                self.episode_state_visits[next_state_key] = 0
             
-            # Round to 2 decimal places for state grouping
-            # This helps distinguish between different states while still grouping similar ones
-            state_rep_rounded = torch.round(state_rep_cpu * 100).int().view(-1).numpy()
-            # Use hash of the array data for efficient lookup
-            state_key = hash(state_rep_rounded.tobytes())
-            
-            # Increment visitation count for this state
-            if state_key not in self.episode_state_visits:
-                self.episode_state_visits[state_key] = 0
-            self.episode_state_visits[state_key] += 1
-            
-            # Normalize by sqrt of visitation count (matching original RIDE)
+            # Normalize by sqrt of visitation count of CURRENT state (s_t)
             # This reduces intrinsic reward for frequently visited states, encouraging exploration
-            visit_count = self.episode_state_visits[state_key]
-            original_reward = intrinsic_reward
-            # Apply normalization: divide by sqrt(visit_count)
-            intrinsic_reward = intrinsic_reward / np.sqrt(visit_count)
-            # Ensure minimum intrinsic reward to maintain exploration signal
-            # This prevents rewards from becoming too small even for frequently visited states
-            # Keep at least 30% of the original (unnormalized) reward
-            min_reward = original_reward * 0.3
-            intrinsic_reward = max(intrinsic_reward, min_reward)
+            # Formula: intrinsic_reward = control_reward / sqrt(N(s_t))
+            if visit_count > 0:
+                count_reward = 1.0 / (np.sqrt(visit_count) + 1e-8)
+            else:
+                count_reward = 1.0  # First visit: no normalization
+            intrinsic_reward = control_reward * count_reward
+        else:
+            intrinsic_reward = control_reward
         
         return intrinsic_reward
     
