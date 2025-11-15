@@ -8,6 +8,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from models.ppo_lstm import PPOLSTMAgent
+from models.ride import RIDEAgent
 
 
 class ExperimentTracker:
@@ -313,6 +314,178 @@ def train_ppo_lstm(
     
     print(f"\n{'='*60}")
     print(f"✓ Training complete!")
+    print(f"  Best reward: {tracker.best_mean_reward:.2f}")
+    print(f"  Total frames: {tracker.total_frames:,}")
+    print(f"  Checkpoints: {checkpoint_path}")
+    print(f"  Plots: {tracker.log_dir}")
+    print(f"{'='*60}\n")
+    
+    return agent
+
+
+def train_ride(
+    env,
+    experiment_name: str,
+    num_iterations: int = 1000,
+    steps_per_iteration: int = 2048,
+    save_interval: int = 50,
+    print_interval: int = 10, 
+    checkpoint_dir: str = "../checkpoints",
+    log_dir: str = "../runs",
+    # Agent hyperparameters
+    device: str = "cpu",
+    lr: float = 3e-4,
+    gamma: float = 0.99,
+    gae_lambda: float = 0.95,
+    ppo_epochs: int = 4,
+    ppo_minibatch_size: int = 64,
+    ppo_epsilon: float = 0.2,
+    value_coef: float = 0.5,
+    entropy_coef: float = 0.01,
+    max_grad_norm: float = 2,
+    max_seq_len: int = 128,
+    hidden_size: int = 256,
+    clip_value_loss: bool = False,
+    # RIDE-specific hyperparameters
+    intrinsic_reward_coef: float = 0.1,  # Default from RIDE paper
+) -> 'RIDEAgent':
+    """
+    Train a RIDE (Rewarding Impact-Driven Exploration) agent with PPO and LSTM.
+    
+    RIDE adds intrinsic rewards based on state representation changes:
+    r_intrinsic = ||φ(s_t) - φ(s_{t-1})||_2
+    r_total = r_extrinsic + β * r_intrinsic
+    
+    Args:
+        env: Gym environment
+        experiment_name: Name for the experiment (used for logging)
+        num_iterations: Number of training iterations
+        steps_per_iteration: Environment steps per iteration
+        save_interval: Save checkpoint every N iterations
+        checkpoint_dir: Directory to save checkpoints
+        log_dir: Directory for experiment logs
+        device: Device to train on ('cpu', 'cuda', or 'mps')
+        lr: Learning rate
+        gamma: Discount factor
+        gae_lambda: GAE lambda
+        ppo_epochs: Number of PPO update epochs
+        ppo_minibatch_size: Minibatch size for PPO updates
+        ppo_epsilon: PPO clipping parameter
+        value_coef: Value loss coefficient
+        entropy_coef: Entropy bonus coefficient
+        max_grad_norm: Maximum gradient norm
+        max_seq_len: Maximum sequence length for TBPTT
+        hidden_size: LSTM hidden size
+        clip_value_loss: Whether to clip value loss
+        intrinsic_reward_coef: Coefficient β for intrinsic rewards (default 0.1)
+    
+    Returns:
+        Trained RIDE agent
+    """
+    # Setup
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_experiment_name = f"{experiment_name}_{timestamp}"
+    
+    checkpoint_path = Path(checkpoint_dir) / full_experiment_name
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    
+    # Log configuration
+    config = {
+        'experiment_name': experiment_name,
+        'timestamp': timestamp,
+        'env_name': str(env.unwrapped.spec.id) if hasattr(env, 'spec') else 'unknown',
+        'num_iterations': num_iterations,
+        'steps_per_iteration': steps_per_iteration,
+        'save_interval': save_interval,
+        'device': device,
+        'lr': lr,
+        'gamma': gamma,
+        'gae_lambda': gae_lambda,
+        'ppo_epochs': ppo_epochs,
+        'ppo_minibatch_size': ppo_minibatch_size,
+        'ppo_epsilon': ppo_epsilon,
+        'value_coef': value_coef,
+        'entropy_coef': entropy_coef,
+        'max_grad_norm': max_grad_norm,
+        'max_seq_len': max_seq_len,
+        'hidden_size': hidden_size,
+        'clip_value_loss': clip_value_loss,
+        'intrinsic_reward_coef': intrinsic_reward_coef,
+        'method': 'RIDE',
+    }
+
+    # Initialize tracker
+    tracker = ExperimentTracker(experiment_name=full_experiment_name, log_dir=log_dir)
+    tracker.log_config(config)
+
+    # Initialize RIDE agent
+    agent = RIDEAgent(
+        env=env,
+        device=device,
+        lr=lr,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+        ppo_epochs=ppo_epochs,
+        ppo_minibatch_size=ppo_minibatch_size,
+        ppo_epsilon=ppo_epsilon,
+        value_coef=value_coef,
+        entropy_coef=entropy_coef,
+        max_grad_norm=max_grad_norm,
+        max_seq_len=max_seq_len,
+        hidden_size=hidden_size,
+        clip_value_loss=clip_value_loss,
+        intrinsic_reward_coef=intrinsic_reward_coef,
+    )
+    
+    print(f"\n{'='*60}")
+    print(f"Starting RIDE training: {full_experiment_name}")
+    print(f"Intrinsic reward coefficient: {intrinsic_reward_coef}")
+    print(f"{'='*60}\n")
+    
+    # Training loop
+    for iteration in range(num_iterations):
+        # Collect rollouts
+        rollout_stats = agent.collect_rollout(steps_per_iteration)
+        
+        # Update policy
+        train_stats = agent.update()
+        
+        tracker.log(
+            steps=steps_per_iteration,
+            mean_reward=rollout_stats['mean_reward'],
+            mean_length=rollout_stats['mean_length'],
+            actor_loss=train_stats['actor_loss'],
+            critic_loss=train_stats['critic_loss'],
+            entropy=train_stats['entropy']
+        )
+        
+        if tracker.is_best_model(rollout_stats['mean_reward']):
+            agent.save(str(checkpoint_path / "best_model.pt"))
+        
+        if (iteration + 1) % print_interval == 0 or iteration == 0:
+            mean_intrinsic = rollout_stats.get('mean_intrinsic_reward', 0)
+            print(f"[{iteration + 1:4d}/{num_iterations}] "
+                  f"Frames: {tracker.total_frames:7,} | "
+                  f"Reward: {rollout_stats['mean_reward']:7.2f} | "
+                  f"Intrinsic: {mean_intrinsic:6.3f} | "
+                  f"Length: {rollout_stats['mean_length']:6.1f} | "
+                  f"Loss: {train_stats['actor_loss']:.4f}/{train_stats['critic_loss']:.4f}")
+
+            # tracker.plot()
+        
+        # Save checkpoint
+        if (iteration + 1) % save_interval == 0:
+            agent.save(str(checkpoint_path / f"checkpoint_{iteration + 1}.pt"))
+        
+    # Save final model
+    agent.save(str(checkpoint_path / "final_model.pt"))
+    
+    # Save data and generate plots
+    tracker.save_data()
+    tracker.save_plot() 
+    
+    print(f"\n{'='*60}")
+    print(f"✓ RIDE training complete!")
     print(f"  Best reward: {tracker.best_mean_reward:.2f}")
     print(f"  Total frames: {tracker.total_frames:,}")
     print(f"  Checkpoints: {checkpoint_path}")

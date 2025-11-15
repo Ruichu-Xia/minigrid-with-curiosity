@@ -1,6 +1,7 @@
 import gymnasium as gym
 from minigrid.envs.doorkey import DoorKeyEnv
 from minigrid.envs.empty import EmptyEnv
+from minigrid.wrappers import FullyObsWrapper
 from gymnasium.envs.registration import register
 import matplotlib.pyplot as plt
 
@@ -92,18 +93,24 @@ class MiniGridEnvWrapper:
     A standalone wrapper for a single task environment with optional rendering control.
     Similar to ContinualEnv but designed for a single task.
     """
-    def __init__(self, env_id: str, render_mode: str = None):
+    def __init__(self, env_id: str, render_mode: str = None, fully_observed: bool = False):
         """
         Initialize a single task environment wrapper.
         
         Args:
             env_id: The gymnasium environment ID (e.g., 'MiniGrid-Empty-9x9-v0')
             render_mode: The render mode for the environment ('rgb_array', 'human', or None)
+            fully_observed: If True, use FullyObsWrapper to provide full grid observation
         """
         self.env_id = env_id
         self.render_mode = render_mode
+        self.fully_observed = fully_observed
         
         base_env = gym.make(env_id, render_mode=self.render_mode)
+        
+        # Apply FullyObsWrapper if requested (gives agent full grid view)
+        if fully_observed:
+            base_env = FullyObsWrapper(base_env)
         
         self.env = ImgObsWrapper(base_env)
         
