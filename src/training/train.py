@@ -348,6 +348,8 @@ def train_ride(
     clip_value_loss: bool = False,
     # RIDE-specific hyperparameters
     intrinsic_reward_coef: float = 0.1,  # Default from RIDE paper
+    forward_loss_coef: float = 0.1,  # Coefficient for forward dynamics loss
+    inverse_loss_coef: float = 0.1,  # Coefficient for inverse dynamics loss
 ) -> 'RIDEAgent':
     """
     Train a RIDE (Rewarding Impact-Driven Exploration) agent with PPO and LSTM.
@@ -378,6 +380,8 @@ def train_ride(
         hidden_size: LSTM hidden size
         clip_value_loss: Whether to clip value loss
         intrinsic_reward_coef: Coefficient β for intrinsic rewards (default 0.1)
+        forward_loss_coef: Coefficient for forward dynamics loss (default 0.1)
+        inverse_loss_coef: Coefficient for inverse dynamics loss (default 0.1)
     
     Returns:
         Trained RIDE agent
@@ -411,6 +415,8 @@ def train_ride(
         'hidden_size': hidden_size,
         'clip_value_loss': clip_value_loss,
         'intrinsic_reward_coef': intrinsic_reward_coef,
+        'forward_loss_coef': forward_loss_coef,
+        'inverse_loss_coef': inverse_loss_coef,
         'method': 'RIDE',
     }
 
@@ -435,6 +441,8 @@ def train_ride(
         hidden_size=hidden_size,
         clip_value_loss=clip_value_loss,
         intrinsic_reward_coef=intrinsic_reward_coef,
+        forward_loss_coef=forward_loss_coef,
+        inverse_loss_coef=inverse_loss_coef,
     )
     
     print(f"\n{'='*60}")
@@ -456,7 +464,9 @@ def train_ride(
             mean_length=rollout_stats['mean_length'],
             actor_loss=train_stats['actor_loss'],
             critic_loss=train_stats['critic_loss'],
-            entropy=train_stats['entropy']
+            entropy=train_stats['entropy'],
+            forward_dynamics_loss=train_stats.get('forward_dynamics_loss', 0),
+            inverse_dynamics_loss=train_stats.get('inverse_dynamics_loss', 0)
         )
         
         if tracker.is_best_model(rollout_stats['mean_reward']):
@@ -464,12 +474,15 @@ def train_ride(
         
         if (iteration + 1) % print_interval == 0 or iteration == 0:
             mean_intrinsic = rollout_stats.get('mean_intrinsic_reward', 0)
+            forward_loss = train_stats.get('forward_dynamics_loss', 0)
+            inverse_loss = train_stats.get('inverse_dynamics_loss', 0)
             print(f"[{iteration + 1:4d}/{num_iterations}] "
                   f"Frames: {tracker.total_frames:7,} | "
                   f"Reward: {rollout_stats['mean_reward']:7.2f} | "
                   f"Intrinsic: {mean_intrinsic:6.3f} | "
                   f"Length: {rollout_stats['mean_length']:6.1f} | "
-                  f"Loss: {train_stats['actor_loss']:.4f}/{train_stats['critic_loss']:.4f}")
+                  f"Loss: {train_stats['actor_loss']:.4f}/{train_stats['critic_loss']:.4f} | "
+                  f"FD: {forward_loss:.4f} ID: {inverse_loss:.4f}")
 
             # tracker.plot()
         
