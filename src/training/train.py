@@ -40,7 +40,9 @@ class ExperimentTracker:
             json.dump(config, f, indent=2)
     
     def log(self, steps: int, mean_reward: float, mean_length: float,
-            actor_loss: float, critic_loss: float, entropy: float):
+            actor_loss: float, critic_loss: float, entropy: float,
+            forward_dynamics_loss: Optional[float] = None,
+            inverse_dynamics_loss: Optional[float] = None):
         """Log training data."""
         self.total_frames += steps
         
@@ -50,6 +52,17 @@ class ExperimentTracker:
         self.data['actor_loss'].append(actor_loss)
         self.data['critic_loss'].append(critic_loss)
         self.data['entropy'].append(entropy)
+        
+        # Optional RIDE-specific losses
+        if forward_dynamics_loss is not None:
+            if 'forward_dynamics_loss' not in self.data:
+                self.data['forward_dynamics_loss'] = []
+            self.data['forward_dynamics_loss'].append(forward_dynamics_loss)
+        
+        if inverse_dynamics_loss is not None:
+            if 'inverse_dynamics_loss' not in self.data:
+                self.data['inverse_dynamics_loss'] = []
+            self.data['inverse_dynamics_loss'].append(inverse_dynamics_loss)
     
     def is_best_model(self, mean_reward: float) -> bool:
         if mean_reward > self.best_mean_reward:
@@ -344,12 +357,13 @@ def train_ride(
     entropy_coef: float = 0.01,
     max_grad_norm: float = 2,
     max_seq_len: int = 128,
-    hidden_size: int = 256,
+    hidden_size: int = 1024,  # Default 1024 matching original RIDE (2-layer LSTM)
     clip_value_loss: bool = False,
     # RIDE-specific hyperparameters
     intrinsic_reward_coef: float = 0.1,  # Default from RIDE paper
     forward_loss_coef: float = 0.1,  # Coefficient for forward dynamics loss
     inverse_loss_coef: float = 0.1,  # Coefficient for inverse dynamics loss
+    use_intrinsic_normalization: bool = True,  # Episodic state visitation normalization
 ) -> 'RIDEAgent':
     """
     Train a RIDE (Rewarding Impact-Driven Exploration) agent with PPO and LSTM.
@@ -377,11 +391,12 @@ def train_ride(
         entropy_coef: Entropy bonus coefficient
         max_grad_norm: Maximum gradient norm
         max_seq_len: Maximum sequence length for TBPTT
-        hidden_size: LSTM hidden size
+        hidden_size: LSTM hidden size (default 1024, matching original RIDE)
         clip_value_loss: Whether to clip value loss
         intrinsic_reward_coef: Coefficient β for intrinsic rewards (default 0.1)
         forward_loss_coef: Coefficient for forward dynamics loss (default 0.1)
         inverse_loss_coef: Coefficient for inverse dynamics loss (default 0.1)
+        use_intrinsic_normalization: Whether to use episodic state visitation normalization (default True)
     
     Returns:
         Trained RIDE agent
@@ -417,6 +432,7 @@ def train_ride(
         'intrinsic_reward_coef': intrinsic_reward_coef,
         'forward_loss_coef': forward_loss_coef,
         'inverse_loss_coef': inverse_loss_coef,
+        'use_intrinsic_normalization': use_intrinsic_normalization,
         'method': 'RIDE',
     }
 
@@ -443,6 +459,7 @@ def train_ride(
         intrinsic_reward_coef=intrinsic_reward_coef,
         forward_loss_coef=forward_loss_coef,
         inverse_loss_coef=inverse_loss_coef,
+        use_intrinsic_normalization=use_intrinsic_normalization,
     )
     
     print(f"\n{'='*60}")
