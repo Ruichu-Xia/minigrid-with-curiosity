@@ -803,8 +803,9 @@ class RIDEAgent(PPOLSTMAgent):
         According to RIDE paper: r_intrinsic = ||φ(s_{t+1}) - φ(s_t)||_2
         
         With episodic state visitation normalization (matching original RIDE):
-        r_intrinsic_normalized = r_intrinsic / sqrt(N(s))
-        where N(s) is the number of times state s has been visited in the current episode.
+        r_intrinsic_normalized = r_intrinsic / sqrt(N_ep(s_{t+1}))
+        where N_ep(s_{t+1}) is the number of times state s_{t+1} has been visited in the current episode.
+        This prevents the agent from going back and forth between states with large embedding differences.
         
         CRITICAL: 
         - State representations are detached to prevent gradient flow
@@ -835,55 +836,44 @@ class RIDEAgent(PPOLSTMAgent):
         control_reward = torch.norm(diff, p=2).item()
         
         # Apply episodic state visitation normalization (matching original RIDE)
-        # CRITICAL: Normalize by visit count of CURRENT state (s_t), not next state (s_{t+1})
-        # In original RIDE: intrinsic_rewards = count_rewards * control_rewards
-        # where count_rewards = 1/sqrt(N(s_t)) and control_rewards = ||φ(s_{t+1}) - φ(s_t)||_2
+        # CRITICAL: Normalize by visit count of NEXT state (s_{t+1}), not current state (s_t)
+        # According to RIDE paper: r_intrinsic = ||φ(s_{t+1}) - φ(s_t)||_2 / sqrt(N_ep(s_{t+1}))
+        # where N_ep(s_{t+1}) is the number of times state s_{t+1} has been visited in current episode
+        # This prevents agent from going back and forth between states with large embedding differences
         if self.use_intrinsic_normalization:
-            # Create a hashable representation of the PREVIOUS state (s_t) for visitation tracking
-            # This is the state we're transitioning FROM, which determines the normalization factor
-            if prev_state_rep.is_cuda:
-                prev_state_rep_cpu = prev_state_rep.cpu()
-            else:
-                prev_state_rep_cpu = prev_state_rep
-            
-            # Round to 1 decimal place for state grouping (matching original implementation)
-            # This groups nearby states together so visitation counts grow as intended
-            prev_state_rep_rounded = torch.round(prev_state_rep_cpu * 10).int().view(-1).numpy()
-            # Use hash of the array data for efficient lookup
-            prev_state_key = hash(prev_state_rep_rounded.tobytes())
-            
-            # Get visit count for the CURRENT state (s_t) BEFORE incrementing
-            # This matches original RIDE: count_rewards = 1/sqrt(N(s_t))
-            if prev_state_key not in self.episode_state_visits:
-                self.episode_state_visits[prev_state_key] = 0
-            
-            # Get the count BEFORE incrementing (for this transition)
-            visit_count = self.episode_state_visits[prev_state_key]
-            
-            # Increment visitation count for the CURRENT state (s_t) after using it
-            # This ensures next time we visit s_t, the count will be higher
-            self.episode_state_visits[prev_state_key] += 1
-            
-            # Also track the next state (s_{t+1}) for future transitions
-            # But don't use it for normalization of THIS reward
-            # CRITICAL BUG FIX: Use prev_state_rep (s_t) for normalization, not state_rep (s_{t+1})
-            # In original RIDE: count_rewards = 1/sqrt(N(s_t)) where s_t is the CURRENT state
-            if prev_state_rep.is_cuda:
+            # Create a hashable representation of the NEXT state (s_{t+1}) for visitation tracking
+            # This is the state we're transitioning TO, which determines the normalization factor
+            if state_rep.is_cuda:
                 state_rep_cpu = state_rep.cpu()
             else:
                 state_rep_cpu = state_rep
-            state_rep_rounded = torch.round(state_rep_cpu * 10).int().view(-1).numpy()
-            next_state_key = hash(state_rep_rounded.tobytes())
-            if next_state_key not in self.episode_state_visits:
-                self.episode_state_visits[next_state_key] = 0
             
-            # Normalize by sqrt of visitation count of CURRENT state (s_t)
+            # Round to 1 decimal place for state grouping (matching original implementation)
+            # This groups nearby states together so visitation counts grow as intended
+            state_rep_rounded = torch.round(state_rep_cpu * 10).int().view(-1).numpy()
+            # Use hash of the array data for efficient lookup
+            next_state_key = hash(state_rep_rounded.tobytes())
+            
+            # Initialize visit count for next state if not seen before
+            # According to RIDE paper: "which is initialized to 1 in the beginning of the episode"
+            # So we initialize to 1, meaning first visit will use count=1
+            if next_state_key not in self.episode_state_visits:
+                self.episode_state_visits[next_state_key] = 1
+            
+            # Get visit count for the NEXT state (s_{t+1}) BEFORE incrementing
+            # This matches original RIDE: r_intrinsic = control_reward / sqrt(N_ep(s_{t+1}))
+            # where N_ep(s_{t+1}) is initialized to 1, so first visit uses count=1
+            visit_count = self.episode_state_visits[next_state_key]
+            
+            # Increment visitation count for the NEXT state (s_{t+1}) after using it
+            # This ensures next time we visit s_{t+1}, the count will be higher
+            self.episode_state_visits[next_state_key] += 1
+            
+            # Normalize by sqrt of visitation count of NEXT state (s_{t+1})
             # This reduces intrinsic reward for frequently visited states, encouraging exploration
-            # Formula: intrinsic_reward = control_reward / sqrt(N(s_t))
-            if visit_count > 0:
-                count_reward = 1.0 / (np.sqrt(visit_count) + 1e-8)
-            else:
-                count_reward = 1.0  # First visit: no normalization
+            # Formula: intrinsic_reward = control_reward / sqrt(N_ep(s_{t+1}))
+            # Since N_ep(s_{t+1}) is initialized to 1, first visit uses count=1, giving full reward
+            count_reward = 1.0 / np.sqrt(visit_count)
             intrinsic_reward = control_reward * count_reward
         else:
             intrinsic_reward = control_reward
@@ -930,6 +920,10 @@ class RIDEAgent(PPOLSTMAgent):
         current_episode_intrinsic_reward = 0
         current_episode_length = 0
         
+        # Diagnostic: Track action distribution
+        action_counts = defaultdict(int)
+        total_actions = 0
+        
         for step in range(num_steps):
             if render:
                 self.env.render()
@@ -941,6 +935,10 @@ class RIDEAgent(PPOLSTMAgent):
             
             # Select action
             action, log_prob, value, new_hidden = self.select_action(obs, hidden_state)
+            
+            # Diagnostic: Track action usage
+            action_counts[action] += 1
+            total_actions += 1
             
             # Take step in environment
             next_obs, extrinsic_reward, terminated, truncated, _ = self.env.step(action)
@@ -990,6 +988,17 @@ class RIDEAgent(PPOLSTMAgent):
         # Finish any incomplete episode
         self.storage.finish_episode()
         
+        # Convert action counts to percentages
+        action_distribution = {}
+        if total_actions > 0:
+            for action_id in range(self.env.action_space.n):
+                count = action_counts[action_id]
+                percentage = (count / total_actions) * 100
+                action_distribution[action_id] = {
+                    'count': count,
+                    'percentage': percentage
+                }
+        
         return {
             'episode_rewards': episode_rewards,
             'episode_lengths': episode_lengths,
@@ -997,6 +1006,7 @@ class RIDEAgent(PPOLSTMAgent):
             'mean_reward': np.mean(episode_rewards) if episode_rewards else 0,
             'mean_length': np.mean(episode_lengths) if episode_lengths else 0,
             'mean_intrinsic_reward': np.mean(episode_intrinsic_rewards) if episode_intrinsic_rewards else 0,
+            'action_distribution': action_distribution,  # Diagnostic: action distribution
         }
     
     def update(self) -> Dict[str, float]:
