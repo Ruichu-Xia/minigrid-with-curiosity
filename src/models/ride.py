@@ -820,14 +820,11 @@ class RIDEAgent(PPOLSTMAgent):
         Returns:
             Intrinsic reward (scalar, normalized L2 distance if normalization enabled)
         """
-        # Reset state visitation counts at episode start
-        if done:
-            self.episode_state_visits = {}
-            self.current_episode_id += 1
-        
-        if prev_state_rep is None:
-            # First timestep: no intrinsic reward
-            return 0.0
+        if prev_state_rep is None or done:
+                if done:
+                    self.episode_state_visits = {}
+                    self.current_episode_id += 1
+                return 0.0
         
         # Compute L2 distance between state representations
         # Both should be detached to prevent gradient flow
@@ -840,7 +837,7 @@ class RIDEAgent(PPOLSTMAgent):
         # According to RIDE paper: r_intrinsic = ||φ(s_{t+1}) - φ(s_t)||_2 / sqrt(N_ep(s_{t+1}))
         # where N_ep(s_{t+1}) is the number of times state s_{t+1} has been visited in current episode
         # This prevents agent from going back and forth between states with large embedding differences
-        if self.use_intrinsic_normalization:
+        if self.use_intrinsic_normalization: 
             # Create a hashable representation of the NEXT state (s_{t+1}) for visitation tracking
             # This is the state we're transitioning TO, which determines the normalization factor
             if state_rep.is_cuda:
@@ -971,13 +968,14 @@ class RIDEAgent(PPOLSTMAgent):
                 episode_rewards.append(current_episode_reward)
                 episode_intrinsic_rewards.append(current_episode_intrinsic_reward)
                 episode_lengths.append(current_episode_length)
-                current_episode_reward = 0
-                current_episode_intrinsic_reward = 0
+
+                current_episode_reward = 0.0
+                current_episode_intrinsic_reward = 0.0
                 current_episode_length = 0
-                
-                # Reset state visitation counts for new episode
-                # (also done in compute_intrinsic_reward, but reset here too for safety)
+
+
                 self.episode_state_visits = {}
+                self.current_episode_id += 1
                 
                 obs, _ = self.env.reset()
                 hidden_state = self.actor_critic.init_hidden(1, self.device)

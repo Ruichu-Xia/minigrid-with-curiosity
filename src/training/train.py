@@ -500,6 +500,27 @@ def train_ride(
                   f"Length: {rollout_stats['mean_length']:6.1f} | "
                   f"Loss: {train_stats['actor_loss']:.4f}/{train_stats['critic_loss']:.4f} | "
                   f"FD: {forward_loss:.4f} ID: {inverse_loss:.4f}")
+            
+            # Diagnostic: Print action distribution
+            action_dist = rollout_stats.get('action_distribution', {})
+            if action_dist:
+                action_names = ['turn_left', 'turn_right', 'move_forward', 'pickup', 'drop', 'toggle', 'done']
+                toggle_pct = action_dist.get(5, {}).get('percentage', 0)
+                
+                print(f"  Actions: ", end="")
+                for action_id in range(len(action_names)):
+                    pct = action_dist.get(action_id, {}).get('percentage', 0)
+                    marker = "★" if action_id == 5 else " "
+                    print(f"{action_names[action_id][:4]}:{pct:5.1f}%{marker} ", end="")
+                print()  # New line
+                
+                # Warning for low toggle usage
+                if toggle_pct < 1.0:
+                    print(f"  ⚠ Toggle (door open) usage: {toggle_pct:.1f}% - VERY LOW! Agent may not be opening doors.")
+                elif toggle_pct < 5.0:
+                    print(f"  ⚠ Toggle (door open) usage: {toggle_pct:.1f}% - Low. Consider increasing exploration.")
+                else:
+                    print(f"  ✓ Toggle (door open) usage: {toggle_pct:.1f}% - OK")
 
             # tracker.plot()
         
