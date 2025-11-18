@@ -467,6 +467,10 @@ class PPOLSTMAgentNovelty:
                 current_approach += curiosity_info['approach_reward']
                 current_interaction += curiosity_info['interaction_reward']
                 total_interactions += curiosity_info['num_interactions']
+
+                if curiosity_info['num_interactions'] > 0:
+                    for obj_name in curiosity_info['interacted_objects']:
+                        print(f"  Step {step}: Interacted with {obj_name} (action={action})")
             
             # Store transition with total reward (extrinsic + intrinsic)
             self.storage.add(obs, action, log_prob, value, total_reward, done, 

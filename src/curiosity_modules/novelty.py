@@ -196,6 +196,8 @@ class UninteractedObjectTracker:
         
         # Count how many times we've interacted with each type
         self.interaction_counts = defaultdict(int)
+
+        self.episode_interacted_objects = set()
         
         # OPTIMIZATION: Cache detector instances (don't create new ones each time)
         self.detector = SymbolicDistinctivenessDetector()
@@ -291,10 +293,12 @@ class UninteractedObjectTracker:
         if action == 3:  # pickup
             for pos in disappeared_positions:
                 obj = objects_before_map[pos]
-                interacted.append(obj)
                 signature = self.get_object_signature(obj)
-                self.interacted_objects.add(signature)
-                self.interaction_counts[signature] += 1
+                if signature not in self.episode_interacted_objects:
+                    interacted.append(obj)
+                    self.interacted_objects.add(signature)
+                    self.interaction_counts[signature] += 1
+                    self.episode_interacted_objects.add(signature)
         
         # 2. Detect state changes at same position (toggle, activation, etc.)
         # Only count if action was toggle (5) - otherwise might be view change
@@ -456,7 +460,7 @@ class UninteractedObjectTracker:
         Reset episode state.
         Keep interaction history across episodes for learning.
         """
-        pass
+        self.episode_interacted_objects.clear()
 
 
 class SymbolicDistinctivenessDetector:
