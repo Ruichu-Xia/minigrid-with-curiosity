@@ -408,7 +408,7 @@ class UninteractedObjectTracker:
                 obj_after = objects_after_map[pos]
                 
                 if (obj_before['object_type'] == obj_after['object_type'] and
-                    obj_before['signature'] != obj_after['signature']):
+                    obj_before['state'] > obj_after['state']):
                     interacted.append(obj_before)
                     signature = self.get_object_signature(obj_before)
                     self.interacted_objects.add(signature)

@@ -442,6 +442,9 @@ class PPOLSTMAgentNovelty:
             action, log_prob, value, new_hidden = self.select_action(obs, hidden_state)
             next_obs, env_reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
+
+            if truncated and not terminated:
+                env_reward = -0.1
             
             # ✅ Compute intrinsic reward if curiosity enabled
             scaled_env_reward = env_reward * self.extrinsic_reward_scale
