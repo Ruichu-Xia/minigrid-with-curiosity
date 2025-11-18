@@ -386,15 +386,6 @@ class UninteractedObjectTracker:
                 self.interaction_counts[signature] += 1
             return interacted
         
-        if detection_after['count'] == 0:
-            # All objects disappeared
-            for obj in detection_before['objects']:
-                interacted.append(obj)
-                signature = self.get_object_signature(obj)
-                self.interacted_objects.add(signature)
-                self.interaction_counts[signature] += 1
-            return interacted
-        
         # Build maps for efficient lookup
         objects_before_map = {obj['position']: obj for obj in detection_before['objects']}
         objects_after_map = {obj['position']: obj for obj in detection_after['objects']}
