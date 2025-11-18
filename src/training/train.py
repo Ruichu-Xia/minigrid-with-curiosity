@@ -7,7 +7,9 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from models.ppo_lstm_novelty import PPOLSTMAgent
+from models.ppo_lstm_novelty import PPOLSTMAgentNovelty
+from models.ppo_lstm import PPOLSTMAgent
+from models.ride import RIDEAgent
 
 
 class ExperimentTracker:
@@ -39,7 +41,9 @@ class ExperimentTracker:
             json.dump(config, f, indent=2)
     
     def log(self, steps: int, mean_reward: float, mean_length: float,
-            actor_loss: float, critic_loss: float, entropy: float):
+            actor_loss: float, critic_loss: float, entropy: float,
+            forward_dynamics_loss: Optional[float] = None,
+            inverse_dynamics_loss: Optional[float] = None):
         """Log training data."""
         self.total_frames += steps
         
@@ -49,6 +53,17 @@ class ExperimentTracker:
         self.data['actor_loss'].append(actor_loss)
         self.data['critic_loss'].append(critic_loss)
         self.data['entropy'].append(entropy)
+        
+        # Optional RIDE-specific losses
+        if forward_dynamics_loss is not None:
+            if 'forward_dynamics_loss' not in self.data:
+                self.data['forward_dynamics_loss'] = []
+            self.data['forward_dynamics_loss'].append(forward_dynamics_loss)
+        
+        if inverse_dynamics_loss is not None:
+            if 'inverse_dynamics_loss' not in self.data:
+                self.data['inverse_dynamics_loss'] = []
+            self.data['inverse_dynamics_loss'].append(inverse_dynamics_loss)
     
     def is_best_model(self, mean_reward: float) -> bool:
         if mean_reward > self.best_mean_reward:
@@ -322,6 +337,216 @@ def train_ppo_lstm(
     return agent
 
 
+def train_ride(
+    env,
+    experiment_name: str,
+    num_iterations: int = 1000,
+    steps_per_iteration: int = 2048,
+    save_interval: int = 50,
+    print_interval: int = 10, 
+    checkpoint_dir: str = "../checkpoints",
+    log_dir: str = "../runs",
+    # Agent hyperparameters
+    device: str = "cpu",
+    lr: float = 3e-4,
+    gamma: float = 0.99,
+    gae_lambda: float = 0.95,
+    ppo_epochs: int = 4,
+    ppo_minibatch_size: int = 64,
+    ppo_epsilon: float = 0.2,
+    value_coef: float = 0.5,
+    entropy_coef: float = 0.01,
+    max_grad_norm: float = 2,
+    max_seq_len: int = 128,
+    hidden_size: int = 1024,  # Default 1024 matching original RIDE (2-layer LSTM)
+    clip_value_loss: bool = False,
+    # RIDE-specific hyperparameters
+    intrinsic_reward_coef: float = 0.1,  # Default from RIDE paper
+    forward_loss_coef: float = 0.1,  # Coefficient for forward dynamics loss
+    inverse_loss_coef: float = 0.1,  # Coefficient for inverse dynamics loss
+    use_intrinsic_normalization: bool = True,  # Episodic state visitation normalization
+) -> 'RIDEAgent':
+    """
+    Train a RIDE (Rewarding Impact-Driven Exploration) agent with PPO and LSTM.
+    
+    RIDE adds intrinsic rewards based on state representation changes:
+    r_intrinsic = ||φ(s_t) - φ(s_{t-1})||_2
+    r_total = r_extrinsic + β * r_intrinsic
+    
+    Args:
+        env: Gym environment
+        experiment_name: Name for the experiment (used for logging)
+        num_iterations: Number of training iterations
+        steps_per_iteration: Environment steps per iteration
+        save_interval: Save checkpoint every N iterations
+        checkpoint_dir: Directory to save checkpoints
+        log_dir: Directory for experiment logs
+        device: Device to train on ('cpu', 'cuda', or 'mps')
+        lr: Learning rate
+        gamma: Discount factor
+        gae_lambda: GAE lambda
+        ppo_epochs: Number of PPO update epochs
+        ppo_minibatch_size: Minibatch size for PPO updates
+        ppo_epsilon: PPO clipping parameter
+        value_coef: Value loss coefficient
+        entropy_coef: Entropy bonus coefficient
+        max_grad_norm: Maximum gradient norm
+        max_seq_len: Maximum sequence length for TBPTT
+        hidden_size: LSTM hidden size (default 1024, matching original RIDE)
+        clip_value_loss: Whether to clip value loss
+        intrinsic_reward_coef: Coefficient β for intrinsic rewards (default 0.1)
+        forward_loss_coef: Coefficient for forward dynamics loss (default 0.1)
+        inverse_loss_coef: Coefficient for inverse dynamics loss (default 0.1)
+        use_intrinsic_normalization: Whether to use episodic state visitation normalization (default True)
+    
+    Returns:
+        Trained RIDE agent
+    """
+    # Setup
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_experiment_name = f"{experiment_name}_{timestamp}"
+    
+    checkpoint_path = Path(checkpoint_dir) / full_experiment_name
+    checkpoint_path.mkdir(parents=True, exist_ok=True)
+    
+    # Log configuration
+    config = {
+        'experiment_name': experiment_name,
+        'timestamp': timestamp,
+        'env_name': str(env.unwrapped.spec.id) if hasattr(env, 'spec') else 'unknown',
+        'num_iterations': num_iterations,
+        'steps_per_iteration': steps_per_iteration,
+        'save_interval': save_interval,
+        'device': device,
+        'lr': lr,
+        'gamma': gamma,
+        'gae_lambda': gae_lambda,
+        'ppo_epochs': ppo_epochs,
+        'ppo_minibatch_size': ppo_minibatch_size,
+        'ppo_epsilon': ppo_epsilon,
+        'value_coef': value_coef,
+        'entropy_coef': entropy_coef,
+        'max_grad_norm': max_grad_norm,
+        'max_seq_len': max_seq_len,
+        'hidden_size': hidden_size,
+        'clip_value_loss': clip_value_loss,
+        'intrinsic_reward_coef': intrinsic_reward_coef,
+        'forward_loss_coef': forward_loss_coef,
+        'inverse_loss_coef': inverse_loss_coef,
+        'use_intrinsic_normalization': use_intrinsic_normalization,
+        'method': 'RIDE',
+    }
+
+    # Initialize tracker
+    tracker = ExperimentTracker(experiment_name=full_experiment_name, log_dir=log_dir)
+    tracker.log_config(config)
+
+    # Initialize RIDE agent
+    agent = RIDEAgent(
+        env=env,
+        device=device,
+        lr=lr,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+        ppo_epochs=ppo_epochs,
+        ppo_minibatch_size=ppo_minibatch_size,
+        ppo_epsilon=ppo_epsilon,
+        value_coef=value_coef,
+        entropy_coef=entropy_coef,
+        max_grad_norm=max_grad_norm,
+        max_seq_len=max_seq_len,
+        hidden_size=hidden_size,
+        clip_value_loss=clip_value_loss,
+        intrinsic_reward_coef=intrinsic_reward_coef,
+        forward_loss_coef=forward_loss_coef,
+        inverse_loss_coef=inverse_loss_coef,
+        use_intrinsic_normalization=use_intrinsic_normalization,
+    )
+    
+    print(f"\n{'='*60}")
+    print(f"Starting RIDE training: {full_experiment_name}")
+    print(f"Intrinsic reward coefficient: {intrinsic_reward_coef}")
+    print(f"{'='*60}\n")
+    
+    # Training loop
+    for iteration in range(num_iterations):
+        # Collect rollouts
+        rollout_stats = agent.collect_rollout(steps_per_iteration)
+        
+        # Update policy
+        train_stats = agent.update()
+        
+        tracker.log(
+            steps=steps_per_iteration,
+            mean_reward=rollout_stats['mean_reward'],
+            mean_length=rollout_stats['mean_length'],
+            actor_loss=train_stats['actor_loss'],
+            critic_loss=train_stats['critic_loss'],
+            entropy=train_stats['entropy'],
+            forward_dynamics_loss=train_stats.get('forward_dynamics_loss', 0),
+            inverse_dynamics_loss=train_stats.get('inverse_dynamics_loss', 0)
+        )
+        
+        if tracker.is_best_model(rollout_stats['mean_reward']):
+            agent.save(str(checkpoint_path / "best_model.pt"))
+        
+        if (iteration + 1) % print_interval == 0 or iteration == 0:
+            mean_intrinsic = rollout_stats.get('mean_intrinsic_reward', 0)
+            forward_loss = train_stats.get('forward_dynamics_loss', 0)
+            inverse_loss = train_stats.get('inverse_dynamics_loss', 0)
+            print(f"[{iteration + 1:4d}/{num_iterations}] "
+                  f"Frames: {tracker.total_frames:7,} | "
+                  f"Reward: {rollout_stats['mean_reward']:7.2f} | "
+                  f"Intrinsic: {mean_intrinsic:6.3f} | "
+                  f"Length: {rollout_stats['mean_length']:6.1f} | "
+                  f"Loss: {train_stats['actor_loss']:.4f}/{train_stats['critic_loss']:.4f} | "
+                  f"FD: {forward_loss:.4f} ID: {inverse_loss:.4f}")
+            
+            # Diagnostic: Print action distribution
+            action_dist = rollout_stats.get('action_distribution', {})
+            if action_dist:
+                action_names = ['turn_left', 'turn_right', 'move_forward', 'pickup', 'drop', 'toggle', 'done']
+                toggle_pct = action_dist.get(5, {}).get('percentage', 0)
+                
+                print(f"  Actions: ", end="")
+                for action_id in range(len(action_names)):
+                    pct = action_dist.get(action_id, {}).get('percentage', 0)
+                    marker = "★" if action_id == 5 else " "
+                    print(f"{action_names[action_id][:4]}:{pct:5.1f}%{marker} ", end="")
+                print()  # New line
+                
+                # Warning for low toggle usage
+                if toggle_pct < 1.0:
+                    print(f"  ⚠ Toggle (door open) usage: {toggle_pct:.1f}% - VERY LOW! Agent may not be opening doors.")
+                elif toggle_pct < 5.0:
+                    print(f"  ⚠ Toggle (door open) usage: {toggle_pct:.1f}% - Low. Consider increasing exploration.")
+                else:
+                    print(f"  ✓ Toggle (door open) usage: {toggle_pct:.1f}% - OK")
+
+            # tracker.plot()
+        
+        # Save checkpoint
+        if (iteration + 1) % save_interval == 0:
+            agent.save(str(checkpoint_path / f"checkpoint_{iteration + 1}.pt"))
+        
+    # Save final model
+    agent.save(str(checkpoint_path / "final_model.pt"))
+    
+    # Save data and generate plots
+    tracker.save_data()
+    tracker.save_plot() 
+    
+    print(f"\n{'='*60}")
+    print(f"✓ RIDE training complete!")
+    print(f"  Best reward: {tracker.best_mean_reward:.2f}")
+    print(f"  Total frames: {tracker.total_frames:,}")
+    print(f"  Checkpoints: {checkpoint_path}")
+    print(f"  Plots: {tracker.log_dir}")
+    print(f"{'='*60}\n")
+    
+    return agent
+
+
 def train_ppo_lstm_with_curiosity(
     env,
     experiment_name: str,
@@ -418,7 +643,7 @@ def train_ppo_lstm_with_curiosity(
     tracker.log_config(config)
 
     # Initialize agent
-    agent = PPOLSTMAgent(
+    agent = PPOLSTMAgentNovelty(
         env=env,
         device=device,
         lr=lr,

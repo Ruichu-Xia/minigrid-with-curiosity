@@ -323,7 +323,7 @@ class RolloutStorage:
         self.current_episode = defaultdict(list)
 
 
-class PPOLSTMAgent:
+class PPOLSTMAgentNovelty:
     """
     Production-quality PPO agent with LSTM and optional curiosity-driven exploration.
     """
