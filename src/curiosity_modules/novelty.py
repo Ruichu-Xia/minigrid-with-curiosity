@@ -407,10 +407,20 @@ class UninteractedObjectTracker:
         if action == 3:  # pickup
             for pos in disappeared_positions:
                 obj = objects_before_map[pos]
-                interacted.append(obj)
                 signature = self.get_object_signature(obj)
-                self.interacted_objects.add(signature)
-                self.interaction_counts[signature] += 1
+
+                in_episode_set = signature in self.episode_interacted_objects
+                count = self.interaction_counts[signature]
+                print(f"  Pickup: {obj['object_name']} | InEpisode:{in_episode_set} | Count:{count}", end="")
+
+                if signature not in self.episode_interacted_objects:
+                    interacted.append(obj)
+                    self.interacted_objects.add(signature)
+                    self.interaction_counts[signature] += 1
+                    self.episode_interacted_objects.add(signature)
+                    print(f" → ✅ REWARDED")
+                else:
+                    print(f" → ❌ NOT REWARDED")
         
         # 2. Detect state changes (toggle)
         if action == 5:  # toggle
