@@ -174,7 +174,7 @@ class NoveltyApproachReward:
     
     def reset_episode(self):
         """Reset episode state (currently no-op since tracker maintains history)."""
-        pass
+        self.novelty_tracker.reset_episode() 
 
 
 class UninteractedObjectTracker:
@@ -229,7 +229,7 @@ class UninteractedObjectTracker:
         novelty = np.exp(-0.01 * interaction_count)
         
         return novelty
-        
+
 
     def detect_interaction_cached(self, obs_before: np.ndarray, obs_after: np.ndarray, 
                              action: int,
