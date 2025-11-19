@@ -444,7 +444,7 @@ class PPOLSTMAgentNovelty:
             done = terminated or truncated
 
             if truncated and not terminated:
-                env_reward = -0.1
+                env_reward = -0.01
             
             # ✅ Compute intrinsic reward if curiosity enabled
             scaled_env_reward = env_reward * self.extrinsic_reward_scale
@@ -468,9 +468,9 @@ class PPOLSTMAgentNovelty:
                 current_interaction += curiosity_info['interaction_reward']
                 total_interactions += curiosity_info['num_interactions']
 
-                if curiosity_info['num_interactions'] > 0:
-                    for obj_name in curiosity_info['interacted_objects']:
-                        print(f"  Step {step}: Interacted with {obj_name} (action={action})")
+                # if curiosity_info['num_interactions'] > 0:
+                #     for obj_name in curiosity_info['interacted_objects']:
+                #         print(f"  Step {step}: Interacted with {obj_name} (action={action})")
             
             # Store transition with total reward (extrinsic + intrinsic)
             self.storage.add(obs, action, log_prob, value, total_reward, done, 
