@@ -353,7 +353,7 @@ class PPOLSTMAgentNovelty:
         self.gamma = gamma
         self.gae_lambda = gae_lambda
         self.ppo_epochs = ppo_epochs
-        self.ppo_minibatch_size = ppo_minibatch_size
+        self.ppo_batch_size = ppo_batch_size
         self.ppo_epsilon = ppo_epsilon
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
@@ -573,8 +573,8 @@ class PPOLSTMAgentNovelty:
             np.random.shuffle(sequences)
             
             # Process in minibatches
-            for i in range(0, len(sequences), self.ppo_minibatch_size):
-                batch_sequences = sequences[i:i + self.ppo_minibatch_size]
+            for i in range(0, len(sequences), self.ppo_batch_size):
+                batch_sequences = sequences[i:i + self.ppo_batch_size]
                 
                 # Pad sequences to same length for batching
                 batch = self._prepare_batch(batch_sequences)
