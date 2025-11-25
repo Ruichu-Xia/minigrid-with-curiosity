@@ -29,6 +29,8 @@ class ExperimentTracker:
             'actor_loss': [],
             'critic_loss': [],
             'entropy': [],
+            'mean_intrinsic_reward': [],
+            'mean_extrinsic_reward': [],
         }
         
         self.total_frames = 0
@@ -44,7 +46,9 @@ class ExperimentTracker:
     def log(self, steps: int, mean_reward: float, mean_length: float,
             actor_loss: float, critic_loss: float, entropy: float,
             forward_dynamics_loss: Optional[float] = None,
-            inverse_dynamics_loss: Optional[float] = None):
+            inverse_dynamics_loss: Optional[float] = None,
+            mean_intrinsic_reward: Optional[float] = None,
+            mean_extrinsic_reward: Optional[float] = None):
         """Log training data."""
         self.total_frames += steps
         
@@ -54,7 +58,13 @@ class ExperimentTracker:
         self.data['actor_loss'].append(actor_loss)
         self.data['critic_loss'].append(critic_loss)
         self.data['entropy'].append(entropy)
-        
+        self.data['mean_intrinsic_reward'].append(
+            mean_intrinsic_reward if mean_intrinsic_reward is not None else np.nan
+        )
+        self.data['mean_extrinsic_reward'].append(
+            mean_extrinsic_reward if mean_extrinsic_reward is not None else np.nan
+        )
+
         # Optional RIDE-specific losses
         if forward_dynamics_loss is not None:
             if 'forward_dynamics_loss' not in self.data:
@@ -103,7 +113,7 @@ class ExperimentTracker:
         plt.show(block=False)  # Non-blocking so training can continue
         plt.pause(0.001)  # Allow plot to render
 
-    def save_plot(self):
+    def save_plot(self, iteration: int):
         if len(self.data['frames']) == 0:
             print("No data to plot!")
             return
@@ -121,7 +131,7 @@ class ExperimentTracker:
         axes[0, 0].set_title('Training Performance', fontsize=13, fontweight='bold')
         axes[0, 0].grid(True, alpha=0.3)
         if self.best_mean_reward > -float('inf'):
-            axes[0, 0].axhline(y=self.best_mean_reward, color='red', linestyle='--', 
+            axes[0, 0].axhcline(y=self.best_mean_reward, color='red', linestyle='--', 
                               alpha=0.5, label=f'Best: {self.best_mean_reward:.2f}')
             axes[0, 0].legend()
         
@@ -152,7 +162,7 @@ class ExperimentTracker:
         
         plt.tight_layout()
         
-        comprehensive_plot_path = self.log_dir / "training_curves.png"
+        comprehensive_plot_path = self.log_dir / f"training_curves_iter_{iteration}.png"
         plt.savefig(comprehensive_plot_path, dpi=150, bbox_inches='tight')
         plt.close()
         
@@ -172,11 +182,41 @@ class ExperimentTracker:
                       alpha=0.5, linewidth=2, label=f'Best: {self.best_mean_reward:.2f}')
             ax.legend(fontsize=12)
         
-        simple_plot_path = self.log_dir / "return_vs_frames.png"
-        plt.savefig(simple_plot_path, dpi=150, bbox_inches='tight')
+        mean_reward_plot_path = self.log_dir / f"return_vs_frames_iter_{iteration}.png"
+        plt.savefig(mean_reward_plot_path, dpi=150, bbox_inches='tight')
         plt.close()
         
-        print(f"📊 Main plot saved to: {simple_plot_path}")
+        print(f"Mean reward plot saved to: {mean_reward_plot_path}")
+
+        # Plot 3: Intrinsic reward vs frames plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(frames, self.data['mean_intrinsic_reward'], linewidth=2.5, color='#6A994E')
+        ax.set_xlabel('Environment Frames', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Average Intrinsic Reward', fontsize=14, fontweight='bold')
+        ax.set_title(f'{self.experiment_name} - Intrinsic Reward', 
+                    fontsize=15, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+
+        intrinsic_reward_plot_path = self.log_dir / f"intrinsic_reward_vs_frames_iter_{iteration}.png"
+        plt.savefig(intrinsic_reward_plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Intrinsic reward plot saved to: {intrinsic_reward_plot_path}")
+        
+        # Plot 4: Extrinsic reward vs frames plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(frames, self.data['mean_extrinsic_reward'], linewidth=2.5, color='#C73E1D')
+        ax.set_xlabel('Environment Frames', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Average Extrinsic Reward', fontsize=14, fontweight='bold')
+        ax.set_title(f'{self.experiment_name} - Extrinsic Reward', 
+                    fontsize=15, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        extrinsic_reward_plot_path = self.log_dir / f"extrinsic_reward_vs_frames_iter_{iteration}.png"
+        plt.savefig(extrinsic_reward_plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Extrinsic reward plot saved to: {extrinsic_reward_plot_path}")
 
 
 def train_ppo_lstm(
@@ -301,7 +341,9 @@ def train_ppo_lstm(
             mean_length=rollout_stats['mean_length'],
             actor_loss=train_stats['actor_loss'],
             critic_loss=train_stats['critic_loss'],
-            entropy=train_stats['entropy']
+            entropy=train_stats['entropy'],
+            mean_intrinsic_reward=rollout_stats.get('mean_intrinsic_reward', None),
+            mean_extrinsic_reward=rollout_stats.get('mean_extrinsic_reward', None)
         )
         
         if tracker.is_best_model(rollout_stats['mean_reward']):
@@ -734,6 +776,7 @@ def train_ppo_framestack_with_curiosity(
     steps_per_iteration: int = 2048,
     save_interval: int = 50,
     print_interval: int = 10,
+    plot_interval: int = 25,
     checkpoint_dir: str = "../checkpoints",
     log_dir: str = "../runs",
     # Agent hyperparameters
@@ -807,6 +850,7 @@ def train_ppo_framestack_with_curiosity(
         'steps_per_iteration': steps_per_iteration,
         'save_interval': save_interval,
         'print_interval': print_interval,
+        "plot_interval": plot_interval,
         'device': device,
         'lr': lr,
         'gamma': gamma,
@@ -900,26 +944,30 @@ def train_ppo_framestack_with_curiosity(
                             f"{rollout_stats['total_interaction_count']}total]")
                 
                 print(log_msg)
+
+            if (iteration + 1) % plot_interval == 0:
+                tracker.save_plot(iteration + 1)
+                print(f"Plots updated: iteration {iteration + 1}")
             
             # Save checkpoint
             if (iteration + 1) % save_interval == 0:
                 agent.save(str(checkpoint_path / f"checkpoint_{iteration + 1}.pt"))
-                print(f"💾 Checkpoint saved: iteration {iteration + 1}")
+                print(f"Checkpoint saved: iteration {iteration + 1}")
     
     except KeyboardInterrupt:
-        print("\n\n⚠️  Training interrupted by user!")
+        print("\n\nTraining interrupted by user!")
         agent.save(str(checkpoint_path / "interrupted_model.pt"))
-        print(f"💾 Model saved to {checkpoint_path / 'interrupted_model.pt'}")
+        print(f"Model saved to {checkpoint_path / 'interrupted_model.pt'}")
     
     # Save final model
     agent.save(str(checkpoint_path / "final_model.pt"))
     
     # Save data and generate plots
     tracker.save_data()
-    tracker.save_plot()
+    tracker.save_plot(num_iterations)
     
     print(f"\n{'='*80}")
-    print(f"✅ Training Complete!")
+    print(f"Training Complete!")
     print(f"{'='*80}")
     print(f"  Best reward: {tracker.best_mean_reward:.2f}")
     print(f"  Total frames: {tracker.total_frames:,}")
