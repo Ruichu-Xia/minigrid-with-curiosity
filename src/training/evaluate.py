@@ -16,6 +16,7 @@ def evaluate_agent(
     deterministic: bool = False,
     render: bool = True,
     render_delay: float = 0.01,
+    device: str = None,
 ) -> dict[str, float]:
     """
     Evaluate the agent's performance on the environment.
@@ -26,9 +27,14 @@ def evaluate_agent(
     else:
         raise FileNotFoundError(f"Config file not found at {config_path}")
     
+    if device is not None:
+        eval_device = device
+    else:
+        eval_device = config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+
     agent = agent_class(
         env=env,
-        device=config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'),
+        device=eval_device,
         lr=config.get('lr', 3e-4),
         gamma=config.get('gamma', 0.99),
         gae_lambda=config.get('gae_lambda', 0.95),

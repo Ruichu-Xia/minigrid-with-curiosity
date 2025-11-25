@@ -511,7 +511,6 @@ class PPOLSTMAgentNovelty:
         # Finish any incomplete episode
         self.storage.finish_episode()
         
-        # ✅ Return enhanced statistics
         stats = {
             'episode_rewards': episode_rewards,
             'episode_lengths': episode_lengths,
@@ -533,7 +532,6 @@ class PPOLSTMAgentNovelty:
                 'mean_interaction_reward': np.mean(episode_interaction_rewards) if episode_interaction_rewards else 0,
                 'total_interactions': total_interactions,
                 'intrinsic_ratio': mean_intrinsic / mean_total if mean_total > 0 else 0,
-                # ✅ NEW: Report curiosity state
                 'unique_objects_interacted': len(self.curiosity_module.novelty_tracker.interacted_objects),
                 'total_interaction_count': sum(self.curiosity_module.novelty_tracker.interaction_counts.values())
             })
