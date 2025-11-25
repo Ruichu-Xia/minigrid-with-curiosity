@@ -39,7 +39,7 @@ def evaluate_agent(
         gamma=config.get('gamma', 0.99),
         gae_lambda=config.get('gae_lambda', 0.95),
         ppo_epochs=config.get('ppo_epochs', 4),
-        ppo_minibatch_size=config.get('ppo_minibatch_size', 64),
+        ppo_batch_size=config.get('ppo_batch_size', 64),
         ppo_epsilon=config.get('ppo_epsilon', 0.2),
         value_coef=config.get('value_coef', 0.5),
         entropy_coef=config.get('entropy_coef', 0.01),

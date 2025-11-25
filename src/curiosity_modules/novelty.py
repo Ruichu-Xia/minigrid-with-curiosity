@@ -368,10 +368,12 @@ class UninteractedObjectTracker:
                 
                 if (obj_before['object_type'] == obj_after['object_type'] and
                     obj_before['state'] > obj_after['state']):
-                    interacted.append(obj_before)
                     signature = self.get_object_signature(obj_before)
-                    self.interacted_objects.add(signature)
-                    self.interaction_counts[signature] += 1
+                    if signature not in self.episode_interacted_objects:
+                        interacted.append(obj_before)
+                        self.interacted_objects.add(signature)
+                        self.interaction_counts[signature] += 1
+                        self.episode_interacted_objects.add(signature)
         
         # ✅ 3. Detect goal reaching (THREE CONDITIONS)
         if terminated and not truncated and env_reward > 0:
