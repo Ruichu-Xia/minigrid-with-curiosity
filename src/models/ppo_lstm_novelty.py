@@ -330,7 +330,7 @@ class PPOLSTMAgentNovelty:
     
     def __init__(self, env, device: str = 'cpu', lr: float = 3e-4, 
                  gamma: float = 0.99, gae_lambda: float = 0.95,
-                 ppo_epochs: int = 4, ppo_minibatch_size: int = 4,
+                 ppo_epochs: int = 4, ppo_batch_size: int = 4,
                  ppo_epsilon: float = 0.2, value_coef: float = 0.5,
                  entropy_coef: float = 0.01, max_grad_norm: float = 0.5,
                  max_seq_len: int = 128, hidden_size: int = 256,

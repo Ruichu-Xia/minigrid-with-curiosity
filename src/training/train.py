@@ -234,7 +234,7 @@ def train_ppo_lstm(
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
     ppo_epochs: int = 4,
-    ppo_minibatch_size: int = 64,
+    ppo_batch_size: int = 64,
     ppo_epsilon: float = 0.2,
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
@@ -259,7 +259,7 @@ def train_ppo_lstm(
         gamma: Discount factor
         gae_lambda: GAE lambda
         ppo_epochs: Number of PPO update epochs
-        ppo_minibatch_size: Minibatch size for PPO updates
+        ppo_batch_size: Minibatch size for PPO updates
         ppo_epsilon: PPO clipping parameter
         value_coef: Value loss coefficient
         entropy_coef: Entropy bonus coefficient
@@ -291,7 +291,7 @@ def train_ppo_lstm(
         'gamma': gamma,
         'gae_lambda': gae_lambda,
         'ppo_epochs': ppo_epochs,
-        'ppo_minibatch_size': ppo_minibatch_size,
+        'ppo_batch_size': ppo_batch_size,
         'ppo_epsilon': ppo_epsilon,
         'value_coef': value_coef,
         'entropy_coef': entropy_coef,
@@ -313,7 +313,7 @@ def train_ppo_lstm(
         gamma=gamma,
         gae_lambda=gae_lambda,
         ppo_epochs=ppo_epochs,
-        ppo_minibatch_size=ppo_minibatch_size,
+        ppo_batch_size=ppo_batch_size,
         ppo_epsilon=ppo_epsilon,
         value_coef=value_coef,
         entropy_coef=entropy_coef,
@@ -606,7 +606,7 @@ def train_ppo_lstm_with_curiosity(
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
     ppo_epochs: int = 4,
-    ppo_minibatch_size: int = 64,
+    ppo_batch_size: int = 64,
     ppo_epsilon: float = 0.2,
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
@@ -636,7 +636,7 @@ def train_ppo_lstm_with_curiosity(
         gamma: Discount factor
         gae_lambda: GAE lambda
         ppo_epochs: Number of PPO update epochs
-        ppo_minibatch_size: Minibatch size for PPO updates
+        ppo_batch_size: Minibatch size for PPO updates
         ppo_epsilon: PPO clipping parameter
         value_coef: Value loss coefficient
         entropy_coef: Entropy bonus coefficient
@@ -701,7 +701,7 @@ def train_ppo_lstm_with_curiosity(
         gamma=gamma,
         gae_lambda=gae_lambda,
         ppo_epochs=ppo_epochs,
-        ppo_minibatch_size=ppo_minibatch_size,
+        ppo_batch_size=ppo_batch_size,
         ppo_epsilon=ppo_epsilon,
         value_coef=value_coef,
         entropy_coef=entropy_coef,
