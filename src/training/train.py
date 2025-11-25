@@ -131,8 +131,8 @@ class ExperimentTracker:
         axes[0, 0].set_title('Training Performance', fontsize=13, fontweight='bold')
         axes[0, 0].grid(True, alpha=0.3)
         if self.best_mean_reward > -float('inf'):
-            axes[0, 0].axhcline(y=self.best_mean_reward, color='red', linestyle='--', 
-                              alpha=0.5, label=f'Best: {self.best_mean_reward:.2f}')
+            axes[0, 0].axhline(y=self.best_mean_reward, color='red', linestyle='--',
+                   alpha=0.5, label=f'Best: {self.best_mean_reward:.2f}')
             axes[0, 0].legend()
         
         # Episode Length
