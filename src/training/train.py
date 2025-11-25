@@ -679,7 +679,6 @@ def train_ppo_lstm_with_curiosity(
         'value_coef': value_coef,
         'entropy_coef': entropy_coef,
         'max_grad_norm': max_grad_norm,
-        'num_frames': num_frames,
         'hidden_size': hidden_size,
         'clip_value_loss': clip_value_loss,
         'use_curiosity': use_curiosity,
