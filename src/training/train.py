@@ -946,6 +946,7 @@ def train_ppo_framestack_with_curiosity(
                 print(log_msg)
 
             if (iteration + 1) % plot_interval == 0:
+                tracker.save_data()
                 tracker.save_plot(iteration + 1)
                 print(f"Plots updated: iteration {iteration + 1}")
             
