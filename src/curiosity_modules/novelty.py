@@ -587,3 +587,29 @@ def get_agent_position_from_obs(obs: np.ndarray) -> tuple[int, int]:
     H, W = obs.shape[:2]
     # Agent is at rightmost column, middle row
     return (H // 2, W - 1)
+
+
+class CountBasedCuriosity:
+    """Episodic state visitation bonus."""
+    
+    def __init__(self, bonus_scale: float = 0.5):
+        self.bonus_scale = bonus_scale
+        self.visit_counts = {}
+    
+    def compute_reward(self, obs: np.ndarray) -> tuple[float, dict]:
+        """Return (reward, info) for consistency."""
+        state_hash = hash(obs.tobytes())
+        count = self.visit_counts.get(state_hash, 0)
+        self.visit_counts[state_hash] = count + 1
+        
+        bonus = self.bonus_scale / np.sqrt(count + 1)
+        
+        info = {
+            'count_bonus': bonus,
+            'visit_count': count + 1,
+            'unique_states': len(self.visit_counts)
+        }
+        return bonus, info
+    
+    def reset_episode(self):
+        self.visit_counts.clear()

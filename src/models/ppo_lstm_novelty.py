@@ -6,7 +6,7 @@ import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 
-from curiosity_modules.novelty import NoveltyApproachReward
+from curiosity_modules.novelty import NoveltyApproachReward, CountBasedCuriosity
 
 
 class PPOLSTMActorCritic(nn.Module):
@@ -339,6 +339,8 @@ class PPOLSTMAgentNovelty:
                  use_curiosity: bool = False,
                  curiosity_approach_scale: float = 0.3,
                  curiosity_interaction_scale: float = 1.0,
+                 use_count_based: bool = True,
+                 count_bonus_scale: float = 0.5,
                  extrinsic_reward_scale: float = 10.0,
                  intrinsic_reward_scale: float = 0.1):
         """
@@ -364,6 +366,7 @@ class PPOLSTMAgentNovelty:
         self.extrinsic_reward_scale = extrinsic_reward_scale
         self.intrinsic_reward_scale = intrinsic_reward_scale
         
+        
         # ✅ NEW: Initialize curiosity module
         self.use_curiosity = use_curiosity
         if self.use_curiosity:
@@ -375,6 +378,12 @@ class PPOLSTMAgentNovelty:
         else:
             self.curiosity_module = None
             print("🔍 Curiosity disabled (baseline)")
+
+        self.use_count_based = use_count_based
+        if self.use_count_based:
+            self.count_based = CountBasedCuriosity(bonus_scale=1.0)  # Base scale
+            self.count_bonus_scale = count_bonus_scale  # Applied scale
+            self.count_based.reset_episode()
         
         obs_shape = env.observation_space.shape
         num_actions = env.action_space.n
@@ -434,6 +443,11 @@ class PPOLSTMAgentNovelty:
             current_approach = 0
             current_interaction = 0
             total_interactions = 0
+
+        if self.use_count_based:
+            episode_count_rewards = []
+            current_count_reward = 0
+            episode_unique_states = []
         
         for step in range(num_steps):
             if render:
@@ -472,6 +486,13 @@ class PPOLSTMAgentNovelty:
                 #     for obj_name in curiosity_info['interacted_objects']:
                 #         print(f"  Step {step}: Interacted with {obj_name} (action={action})")
             
+            if self.use_count_based:
+                count_reward, count_info = self.count_based.compute_reward(next_obs)
+                count_reward *= self.count_bonus_scale
+                total_reward += count_reward
+
+                current_count_reward += count_reward
+
             # Store transition with total reward (extrinsic + intrinsic)
             self.storage.add(obs, action, log_prob, value, total_reward, done, 
                            hidden_state, new_hidden, next_obs)
@@ -493,6 +514,11 @@ class PPOLSTMAgentNovelty:
                     current_extrinsic = 0
                     current_approach = 0
                     current_interaction = 0
+
+                if self.use_count_based:
+                    episode_count_rewards.append(current_count_reward)
+                    episode_unique_states.append(len(self.count_based.visit_counts))
+                    current_count_reward = 0
                 
                 current_episode_reward = 0
                 current_episode_length = 0
@@ -502,6 +528,8 @@ class PPOLSTMAgentNovelty:
                 
                 # ✅ IMPORTANT: Episode reset does NOT clear curiosity history
                 # The curiosity module remembers interactions across episodes
+                if self.use_count_based:
+                    self.count_based.reset_episode()
                 if self.use_curiosity:
                     self.curiosity_module.reset_episode()  # No-op, but explicit
             else:
@@ -534,6 +562,15 @@ class PPOLSTMAgentNovelty:
                 'intrinsic_ratio': mean_intrinsic / mean_total if mean_total > 0 else 0,
                 'unique_objects_interacted': len(self.curiosity_module.novelty_tracker.interacted_objects),
                 'total_interaction_count': sum(self.curiosity_module.novelty_tracker.interaction_counts.values())
+            })
+
+        if self.use_count_based:
+            mean_count_reward = np.mean(episode_count_rewards) if episode_count_rewards else 0
+            mean_unique_states = np.mean(episode_unique_states) if episode_unique_states else 0
+            
+            stats.update({
+                'mean_count_reward': mean_count_reward,
+                'mean_unique_states': mean_unique_states,
             })
         
         return stats

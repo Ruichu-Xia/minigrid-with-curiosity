@@ -31,6 +31,8 @@ class ExperimentTracker:
             'entropy': [],
             'mean_intrinsic_reward': [],
             'mean_extrinsic_reward': [],
+            'mean_count_reward': [],
+            'mean_unique_states': [],
         }
         
         self.total_frames = 0
@@ -48,7 +50,9 @@ class ExperimentTracker:
             forward_dynamics_loss: Optional[float] = None,
             inverse_dynamics_loss: Optional[float] = None,
             mean_intrinsic_reward: Optional[float] = None,
-            mean_extrinsic_reward: Optional[float] = None):
+            mean_extrinsic_reward: Optional[float] = None,
+            mean_count_reward: Optional[float] = None,
+            mean_unique_states: Optional[float] = None):
         """Log training data."""
         self.total_frames += steps
         
@@ -63,6 +67,13 @@ class ExperimentTracker:
         )
         self.data['mean_extrinsic_reward'].append(
             mean_extrinsic_reward if mean_extrinsic_reward is not None else np.nan
+        )
+
+        self.data['mean_count_reward'].append(
+            mean_count_reward if mean_count_reward is not None else np.nan
+        )
+        self.data['mean_unique_states'].append(
+            mean_unique_states if mean_unique_states is not None else np.nan
         )
 
         # Optional RIDE-specific losses
@@ -217,6 +228,38 @@ class ExperimentTracker:
         plt.close()
         
         print(f"Extrinsic reward plot saved to: {extrinsic_reward_plot_path}")
+
+        # Plot 5: Count reward vs frames plot
+        if not all(np.isnan(self.data['mean_count_reward'])):
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(frames, self.data['mean_count_reward'], linewidth=2.5, color='#9B59B6')
+            ax.set_xlabel('Environment Frames', fontsize=14, fontweight='bold')
+            ax.set_ylabel('Average Count Reward', fontsize=14, fontweight='bold')
+            ax.set_title(f'{self.experiment_name} - Count-Based Exploration Reward', 
+                        fontsize=15, fontweight='bold')
+            ax.grid(True, alpha=0.3)
+            
+            count_reward_plot_path = self.log_dir / f"count_reward_vs_frames_iter_{iteration}.png"
+            plt.savefig(count_reward_plot_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            print(f"Count reward plot saved to: {count_reward_plot_path}")
+
+        # Plot 6: Unique states vs frames plot
+        if not all(np.isnan(self.data['mean_unique_states'])):
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(frames, self.data['mean_unique_states'], linewidth=2.5, color='#E67E22')
+            ax.set_xlabel('Environment Frames', fontsize=14, fontweight='bold')
+            ax.set_ylabel('Average Unique States per Episode', fontsize=14, fontweight='bold')
+            ax.set_title(f'{self.experiment_name} - State Space Coverage', 
+                        fontsize=15, fontweight='bold')
+            ax.grid(True, alpha=0.3)
+            
+            unique_states_plot_path = self.log_dir / f"unique_states_vs_frames_iter_{iteration}.png"
+            plt.savefig(unique_states_plot_path, dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            print(f"Unique states plot saved to: {unique_states_plot_path}")
 
 
 def train_ppo_lstm(
@@ -617,6 +660,8 @@ def train_ppo_lstm_with_curiosity(
     use_curiosity: bool = False,
     curiosity_approach_scale: float = 0.3,
     curiosity_interaction_scale: float = 1.0,
+    use_count_based: bool = True,
+    count_bonus_scale: float = 0.5,
     extrinsic_reward_scale: float = 10.0,
     intrinsic_reward_scale: float = 0.1,
 ) -> 'PPOLSTMAgent':
@@ -647,6 +692,8 @@ def train_ppo_lstm_with_curiosity(
         use_curiosity: Whether to use intrinsic curiosity rewards
         curiosity_approach_scale: Scale for approach rewards (getting closer)
         curiosity_interaction_scale: Scale for interaction rewards (pickup/toggle)
+        use_count_based: Whether to use episodic state visitation bonus
+        count_bonus_scale: Scale for episodic state visitation bonus
         extrinsic_reward_scale: Scale for extrinsic rewards (task completion)
         intrinsic_reward_scale: Scale for intrinsic rewards (curiosity)
     Returns:
@@ -709,6 +756,8 @@ def train_ppo_lstm_with_curiosity(
         hidden_size=hidden_size,
         clip_value_loss=clip_value_loss,
         use_curiosity=use_curiosity,
+        use_count_based=use_count_based,
+        count_bonus_scale=count_bonus_scale,
         curiosity_approach_scale=curiosity_approach_scale,
         curiosity_interaction_scale=curiosity_interaction_scale,
         extrinsic_reward_scale=extrinsic_reward_scale,
@@ -735,7 +784,9 @@ def train_ppo_lstm_with_curiosity(
             critic_loss=train_stats['critic_loss'],
             entropy=train_stats['entropy'],
             mean_intrinsic_reward=rollout_stats.get('mean_intrinsic_reward', None),
-            mean_extrinsic_reward=rollout_stats.get('mean_extrinsic_reward', None)
+            mean_extrinsic_reward=rollout_stats.get('mean_extrinsic_reward', None),
+            mean_count_reward=rollout_stats.get('mean_count_reward', None),
+            mean_unique_states=rollout_stats.get('mean_unique_states', None)
         )
         
         if tracker.is_best_model(rollout_stats['mean_reward']):
@@ -753,6 +804,10 @@ def train_ppo_lstm_with_curiosity(
                            f"Inter: {rollout_stats['total_interactions']:3d} "
                            f"[{rollout_stats['unique_objects_interacted']}unique, "
                            f"{rollout_stats['total_interaction_count']}total]")
+
+            if use_count_based:
+                log_msg += (f" | Count: {rollout_stats.get('mean_count_reward', 0):5.3f} "
+                        f"States: {rollout_stats.get('mean_unique_states', 0):.0f}")
             
             print(log_msg)
 
