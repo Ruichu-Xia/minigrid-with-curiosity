@@ -1,6 +1,7 @@
 import gymnasium as gym
 from minigrid.envs.doorkey import DoorKeyEnv
 from minigrid.envs.empty import EmptyEnv
+from minigrid.envs.multiroom import MultiRoomEnv
 from minigrid.wrappers import FullyObsWrapper
 from gymnasium.envs.registration import register
 import matplotlib.pyplot as plt
@@ -27,6 +28,21 @@ class EmptyEnv9x9(EmptyEnv):
 register(
     id='MiniGrid-Empty-9x9-v0',
     entry_point=__name__ + ':EmptyEnv9x9'
+)
+
+
+class MultiRoomEnvN7S8(MultiRoomEnv):
+    def __init__(self, **kwargs):
+        super().__init__(
+            minNumRooms=7,
+            maxNumRooms=7,
+            maxRoomSize=8,
+            **kwargs
+        )
+
+register(
+    id='MiniGrid-MultiRoom-N7-S8-v0',
+    entry_point=__name__ + ':MultiRoomEnvN7S8'
 )
 
 
