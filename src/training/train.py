@@ -410,7 +410,7 @@ def train_ppo_lstm(
     
     # Save data and generate plots
     tracker.save_data()
-    tracker.save_plot() 
+    tracker.save_plot(num_iterations) 
     
     print(f"\n{'='*60}")
     print(f"✓ Training complete!")
@@ -430,6 +430,7 @@ def train_ride(
     steps_per_iteration: int = 2048,
     save_interval: int = 50,
     print_interval: int = 10, 
+    plot_interval: int = 25,
     checkpoint_dir: str = "../checkpoints",
     log_dir: str = "../runs",
     # Agent hyperparameters
@@ -451,6 +452,7 @@ def train_ride(
     forward_loss_coef: float = 0.1,  # Coefficient for forward dynamics loss
     inverse_loss_coef: float = 0.1,  # Coefficient for inverse dynamics loss
     use_intrinsic_normalization: bool = True,  # Episodic state visitation normalization
+    turn_action_penalty: float = 0.5,  # Scale down intrinsic rewards for turning actions (0.5 = half reward)
 ) -> 'RIDEAgent':
     """
     Train a RIDE (Rewarding Impact-Driven Exploration) agent with PPO and LSTM.
@@ -484,6 +486,8 @@ def train_ride(
         forward_loss_coef: Coefficient for forward dynamics loss (default 0.1)
         inverse_loss_coef: Coefficient for inverse dynamics loss (default 0.1)
         use_intrinsic_normalization: Whether to use episodic state visitation normalization (default True)
+        turn_action_penalty: Scale factor for intrinsic rewards on turning actions (default 0.5)
+                          Lower values penalize turning more. Set to 1.0 to disable.
     
     Returns:
         Trained RIDE agent
@@ -503,6 +507,8 @@ def train_ride(
         'num_iterations': num_iterations,
         'steps_per_iteration': steps_per_iteration,
         'save_interval': save_interval,
+        'print_interval': print_interval,
+        'plot_interval': plot_interval,
         'device': device,
         'lr': lr,
         'gamma': gamma,
@@ -520,6 +526,7 @@ def train_ride(
         'forward_loss_coef': forward_loss_coef,
         'inverse_loss_coef': inverse_loss_coef,
         'use_intrinsic_normalization': use_intrinsic_normalization,
+        'turn_action_penalty': turn_action_penalty,
         'method': 'RIDE',
     }
 
@@ -547,6 +554,7 @@ def train_ride(
         forward_loss_coef=forward_loss_coef,
         inverse_loss_coef=inverse_loss_coef,
         use_intrinsic_normalization=use_intrinsic_normalization,
+        turn_action_penalty=turn_action_penalty,
     )
     
     print(f"\n{'='*60}")
@@ -610,6 +618,11 @@ def train_ride(
                     print(f"  ✓ Toggle (door open) usage: {toggle_pct:.1f}% - OK")
 
             # tracker.plot()
+
+        if (iteration + 1) % plot_interval == 0:
+            tracker.save_data()
+            tracker.save_plot(iteration + 1)
+            print(f"Plots updated: iteration {iteration + 1}")
         
         # Save checkpoint
         if (iteration + 1) % save_interval == 0:
@@ -620,7 +633,7 @@ def train_ride(
     
     # Save data and generate plots
     tracker.save_data()
-    tracker.save_plot() 
+    tracker.save_plot(num_iterations) 
     
     print(f"\n{'='*60}")
     print(f"✓ RIDE training complete!")
@@ -825,7 +838,7 @@ def train_ppo_lstm_with_curiosity(
     
     # Save data and generate plots
     tracker.save_data()
-    tracker.save_plot() 
+    tracker.save_plot(num_iterations) 
     
     print(f"\n{'='*60}")
     print(f"✓ Training complete!")

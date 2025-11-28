@@ -634,7 +634,8 @@ class RIDEAgent(PPOLSTMAgent):
                  forward_loss_coef: float = 0.1,
                  inverse_loss_coef: float = 0.1,
                  state_embedding_dim: int = 128,
-                 use_intrinsic_normalization: bool = True):
+                 use_intrinsic_normalization: bool = True,
+                 turn_action_penalty: float = 0.5):
         """
         Args:
             intrinsic_reward_coef: Coefficient β for intrinsic rewards (default 0.1, matching RIDE paper)
@@ -700,11 +701,22 @@ class RIDEAgent(PPOLSTMAgent):
         self.forward_loss_coef = forward_loss_coef
         self.inverse_loss_coef = inverse_loss_coef
         self.use_intrinsic_normalization = use_intrinsic_normalization
+        self.turn_action_penalty = turn_action_penalty  # Scale down intrinsic rewards for turning actions
         
         # Episodic state visitation tracking for intrinsic reward normalization
         # Maps state representation (as tuple of rounded values) to visitation count
         self.episode_state_visits = {}  # Reset at start of each episode
         self.current_episode_id = 0
+        
+        # Action-specific scaling for intrinsic rewards
+        # In MiniGrid: 0=turn_left, 1=turn_right, 2=move_forward, 3=pickup, 4=drop, 5=toggle, 6=done
+        # Turning actions (0, 1) get penalized to prevent spinning behavior
+        self.action_intrinsic_scale = {}
+        for action_id in range(num_actions):
+            if action_id in [0, 1]:  # turn_left, turn_right
+                self.action_intrinsic_scale[action_id] = turn_action_penalty
+            else:
+                self.action_intrinsic_scale[action_id] = 1.0
         
         # state_embedding_dim will be set after computing actual dimension
     
@@ -870,8 +882,15 @@ class RIDEAgent(PPOLSTMAgent):
             # This reduces intrinsic reward for frequently visited states, encouraging exploration
             # Formula: intrinsic_reward = control_reward / sqrt(N_ep(s_{t+1}))
             # Since N_ep(s_{t+1}) is initialized to 1, first visit uses count=1, giving full reward
+            # Use more aggressive normalization: sqrt(visit_count + 1) to ensure first visit gets full reward
+            # but subsequent visits decay faster
             count_reward = 1.0 / np.sqrt(visit_count)
             intrinsic_reward = control_reward * count_reward
+            
+            # Additional penalty for very frequently visited states (prevents oscillation)
+            # If a state is visited more than 5 times, apply additional penalty
+            if visit_count > 5:
+                intrinsic_reward *= 0.5  # Halve the reward for over-visited states
         else:
             intrinsic_reward = control_reward
         
@@ -953,15 +972,20 @@ class RIDEAgent(PPOLSTMAgent):
             # Pass done flag for episodic state visitation normalization
             intrinsic_reward = self.compute_intrinsic_reward(next_state_rep, current_state_rep, done=done)
             
-            # Total reward = extrinsic + intrinsic
-            total_reward = extrinsic_reward + self.intrinsic_reward_coef * intrinsic_reward
+            # Apply action-specific scaling to penalize turning actions
+            # This prevents the agent from spinning in place to get high intrinsic rewards
+            action_scale = self.action_intrinsic_scale.get(action, 1.0)
+            scaled_intrinsic_reward = intrinsic_reward * action_scale
+            
+            # Total reward = extrinsic + scaled intrinsic
+            total_reward = extrinsic_reward + self.intrinsic_reward_coef * scaled_intrinsic_reward
             
             # Store transition with current state representation
             self.storage.add(obs, action, log_prob, value, total_reward, done,
                            hidden_state, new_hidden, next_obs, state_rep=current_state_rep)
             
             current_episode_reward += extrinsic_reward  # Track extrinsic only for stats
-            current_episode_intrinsic_reward += intrinsic_reward
+            current_episode_intrinsic_reward += scaled_intrinsic_reward  # Track scaled intrinsic reward
             current_episode_length += 1
             
             if done:
@@ -1242,6 +1266,7 @@ class RIDEAgent(PPOLSTMAgent):
             'intrinsic_reward_coef': self.intrinsic_reward_coef,
             'forward_loss_coef': self.forward_loss_coef,
             'inverse_loss_coef': self.inverse_loss_coef,
+            'turn_action_penalty': self.turn_action_penalty,
         }, path)
     
     def load(self, path: str):
@@ -1263,3 +1288,12 @@ class RIDEAgent(PPOLSTMAgent):
             self.forward_loss_coef = checkpoint['forward_loss_coef']
         if 'inverse_loss_coef' in checkpoint:
             self.inverse_loss_coef = checkpoint['inverse_loss_coef']
+        if 'turn_action_penalty' in checkpoint:
+            self.turn_action_penalty = checkpoint['turn_action_penalty']
+            # Rebuild action_intrinsic_scale with loaded penalty
+            num_actions = self.env.action_space.n
+            for action_id in range(num_actions):
+                if action_id in [0, 1]:  # turn_left, turn_right
+                    self.action_intrinsic_scale[action_id] = self.turn_action_penalty
+                else:
+                    self.action_intrinsic_scale[action_id] = 1.0
