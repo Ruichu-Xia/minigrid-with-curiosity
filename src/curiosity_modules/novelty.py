@@ -322,42 +322,6 @@ class UninteractedObjectTracker:
                     self.interacted_objects.add(signature)
                     self.interaction_counts[signature] += 1
                     self.episode_interacted_objects.add(signature)
-                    # print(f" → ✅ REWARDED")
-                # else:
-                #     print(f" → ❌ NOT REWARDED")
-        # 1. Detect disappeared objects (pickup)
-        # disappeared_positions = set(objects_before_map.keys()) - set(objects_after_map.keys())
-
-        # # ✅ ADD: Log even when no pickup action
-        # if len(disappeared_positions) > 0:
-        #     print(f"\n🔍 Objects disappeared: {len(disappeared_positions)} at {disappeared_positions}")
-        #     print(f"   Action taken: {action}")
-        #     if action != 3:
-        #         print(f"   ⚠️  WARNING: Objects disappeared but action wasn't pickup!")
-
-        # if action == 3:  # pickup
-        #     # ✅ ADD: Log pickup action even with no objects
-        #     if len(disappeared_positions) == 0:
-        #         print(f"\n⚠️  Pickup action (3) but NO objects disappeared!")
-        #         print(f"   Objects before: {len(objects_before_map)}")
-        #         print(f"   Objects after: {len(objects_after_map)}")
-            
-        #     for pos in disappeared_positions:
-        #         obj = objects_before_map[pos]
-        #         signature = self.get_object_signature(obj)
-
-        #         in_episode_set = signature in self.episode_interacted_objects
-        #         count = self.interaction_counts[signature]
-        #         print(f"  Pickup: {obj['object_name']} | InEpisode:{in_episode_set} | Count:{count}", end="")
-
-        #         if signature not in self.episode_interacted_objects:
-        #             interacted.append(obj)
-        #             self.interacted_objects.add(signature)
-        #             self.interaction_counts[signature] += 1
-        #             self.episode_interacted_objects.add(signature)
-        #             print(f" → ✅ REWARDED")
-        #         else:
-        #             print(f" → ❌ NOT REWARDED")
         
         # 2. Detect state changes (toggle)
         if action == 5:  # toggle
