@@ -16,3 +16,6 @@ src/runs/
 src/files/
 src/scratch/
 src/notebooks/
+
+# Experiment data: keep result plots in the repo, drop raw JSON logs
+src/experiment_data/**/*.json
