@@ -78,14 +78,20 @@ symbolic representation to reward *semantic* interaction:
 
 ![Novelty vs RIDE vs Simple PPO](src/experiment_data/comparison_plot.png)
 
+Final mean return after training (each cell is the same metric; **✅** marks a solved task, **✗** a failure,
+**–** not evaluated):
+
 | Task | Simple PPO | RIDE | Novelty curiosity |
 | :--- | :---: | :---: | :---: |
-| SimpleCrossing-S9N1 | ✅ | — | — |
-| FourRooms | ✅ | — | — |
-| DoorKey-9x9 | ❌ | ❌ (best ≈ 0.24) | ✅ solves ≈ 3×10⁵ frames |
-| MultiRoom-N4-S5 | ❌ | ✅ ≈ 0.70 | ✅ solves ≈ 1×10⁶ frames |
-| MultiRoom-N6 | ❌ | ✅ ≈ 0.60 | ✅ solves > 3×10⁶ frames |
-| MultiRoom-N7-S8 | ❌ | ✅ ≈ 0.68 | ✅ + count, ≈ 1.25×10⁷ frames |
+| SimpleCrossing-S9N1 | ✅ 0.96 | – | – |
+| FourRooms | ✅ 0.65 | – | – |
+| DoorKey-9x9 | ✗ 0.00 | ✗ 0.24 | ✅ 0.98 |
+| MultiRoom-N4-S5 | ✗ 0.00 | ✅ 0.70 | ✅ 0.70 |
+| MultiRoom-N6 | ✗ 0.00 | ✅ 0.60 | ✅ 0.57 |
+| MultiRoom-N7-S8 | ✗ 0.00 | ✅ 0.68 | ✅ 0.68 |
+
+*Convergence speed (frames for novelty curiosity to solve): DoorKey ≈ 0.3M · N4-S5 ≈ 1M · N6 ≈ 3M ·
+N7-S8 ≈ 12.5M (with the count bonus).*
 
 **Key finding — the two curiosity signals are complementary:**
 
